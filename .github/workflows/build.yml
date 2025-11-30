@@ -10,78 +10,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 检出代码
     - uses: actions/checkout@v4
 
-    # 2. 配置 Java 环境
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    # 3. 配置 Flutter
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.19.0'
         channel: 'stable'
 
-    # 4. 重建安卓项目结构
     - name: Recreate Android Project Structure
       run: |
-        # 创建临时项目
         flutter create temp_project --platforms android
-        
-        # 移动 android 目录
         if [ ! -d "android" ]; then
-          echo "Creating android directory..."
           mv temp_project/android .
         fi
-        
-        # 复制 metadata
         if [ -f "temp_project/.metadata" ]; then
             cp temp_project/.metadata .
         fi
-        
-        # 清理临时文件
         rm -rf temp_project
-        
-        # 启用安卓支持
         flutter config --enable-android
 
-    # 5. 【关键修复】配置 Android 设置 (权限 & 最低版本)
-    # 这里合并了之前的权限注入，并增加了版本修改命令
     - name: Configure Android Settings
       run: |
-        echo "Injecting permissions and updating SDK version..."
+        echo "Configuring Android project..."
         
-        # 1. 注入相机权限 (扫码必须)
+        # 1. 注入相机权限
         sed -i 's/<application/<uses-permission android:name="android.permission.CAMERA" \/>\n    <application/g' android/app/src/main/AndroidManifest.xml
         
-        # 2. 修改最低 SDK 版本 (修复 minSdk 19 < 21 的错误)
-        # 找到 android/app/build.gradle 中包含 minSdkVersion 的那一行，强制改为 21
+        # 2. 修改最低 SDK 版本 (兼容扫码库)
         sed -i 's/minSdkVersion.*/minSdkVersion 21/g' android/app/build.gradle
         
-        # 3. 打印文件内容以供检查 (可选，用于调试)
-        echo "--- Checked AndroidManifest.xml ---"
-        grep "uses-permission" android/app/src/main/AndroidManifest.xml
-        echo "--- Checked build.gradle ---"
-        grep "minSdkVersion" android/app/build.gradle
+        # 3. 【新增】修改 App 显示名称为 "仓库管理"
+        # 默认生成的 label 是 "temp_project"，我们把它替换掉
+        sed -i 's/android:label="temp_project"/android:label="仓库管理"/g' android/app/src/main/AndroidManifest.xml
+        
+        # 检查修改结果
+        grep "android:label" android/app/src/main/AndroidManifest.xml
 
-    # 6. 获取依赖
     - name: Get dependencies
       run: flutter pub get
 
-    # 7. 接受协议
     - name: Accept Android Licenses
       run: yes | flutter doctor --android-licenses || true
 
-    # 8. 开始构建
     - name: Build APK
       run: flutter build apk --release --no-tree-shake-icons
 
-    # 9. 上传 APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
