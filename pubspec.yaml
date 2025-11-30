@@ -9,18 +9,16 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
-  # 状态管理
   provider: ^6.0.5
-  # 本地存储
   shared_preferences: ^2.2.0
-  # 图标库
   cupertino_icons: ^1.0.2
-  # 日期格式化
   intl: ^0.18.1
-  # PDF生成与打印
   pdf: ^3.10.4
   printing: ^5.11.0
+  # 新增：扫码库
+  mobile_scanner: ^5.0.0
+  # 新增：权限处理
+  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:
@@ -30,6 +28,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # --- 这里是新增的字体配置 ---
   assets:
+    # 请确保您的字体文件名是 FangSong.ttf 并且放在 assets/fonts/ 目录下
     - assets/fonts/FangSong.ttf

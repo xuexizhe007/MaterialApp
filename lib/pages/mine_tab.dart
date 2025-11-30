@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle; // 引入资源加载器
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:provider/provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -109,7 +109,7 @@ class RecordsPage extends StatelessWidget {
                 Text((isIn ? "+" : "-") + r.count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Icons.print, color: Colors.blue),
-                  onPressed: () => _printPdf(context, r), // 传入 context 用于报错提示
+                  onPressed: () => _printPdf(context, r),
                 )
               ],
             ),
@@ -119,87 +119,78 @@ class RecordsPage extends StatelessWidget {
     );
   }
 
-  // 生成 PDF (已修改：支持中文字体)
+  // --- 修复后的 PDF 生成逻辑 ---
   Future<void> _printPdf(BuildContext context, RecordItem r) async {
     try {
       final doc = pw.Document();
+      pw.Font? font;
 
-      // 1. 加载中文字体文件
-      final fontData = await rootBundle.load("assets/fonts/FangSong.ttf");
-      final ttf = pw.Font.ttf(fontData);
+      // 1. 尝试加载中文字体
+      try {
+        final fontData = await rootBundle.load("assets/fonts/FangSong.ttf");
+        font = pw.Font.ttf(fontData);
+      } catch (e) {
+        debugPrint("字体加载失败: $e");
+        if (context.mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+             content: Text("警告：字体文件未找到，PDF中文将乱码。请确保 assets/fonts/FangSong.ttf 存在"),
+             backgroundColor: Colors.orange,
+           ));
+        }
+      }
 
-      // 2. 定义使用该字体的样式
-      final titleStyle = pw.TextStyle(font: ttf, fontSize: 24, fontWeight: pw.FontWeight.bold);
-      final contentStyle = pw.TextStyle(font: ttf, fontSize: 14);
-      final labelStyle = pw.TextStyle(font: ttf, fontSize: 14, fontWeight: pw.FontWeight.bold);
-
-      // 3. 构建页面
       doc.addPage(
         pw.Page(
-          // 设置默认字体，防止某些遗漏的地方乱码
-          theme: pw.ThemeData.withFont(base: ttf),
+          // 2. 安全应用字体
+          theme: font != null ? pw.ThemeData.withFont(base: font) : null,
           build: (pw.Context context) {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Center(
-                  child: pw.Text(r.type == 'in' ? "物资入库单" : "物资出库单", style: titleStyle)
-                ),
+                pw.Header(level: 0, child: pw.Text(r.type == 'in' ? "物资入库单" : "物资出库单", style: const pw.TextStyle(fontSize: 24))),
                 pw.SizedBox(height: 20),
+                pw.Text("单号 ID: ${r.id}"),
+                pw.Text("日期 Date: ${r.date}"),
                 pw.Divider(),
                 pw.SizedBox(height: 10),
-                
-                _buildRow("单据编号", r.id, labelStyle, contentStyle),
-                _buildRow("日期时间", r.date, labelStyle, contentStyle),
-                _buildRow("物资名称", r.name, labelStyle, contentStyle),
-                _buildRow("物资编码", r.code, labelStyle, contentStyle),
-                _buildRow("数量", "${r.count}", labelStyle, contentStyle),
-                _buildRow("业务类型", r.subType, labelStyle, contentStyle),
-                
-                if (r.type == 'in')
-                  _buildRow("供应商/来源", r.target, labelStyle, contentStyle),
-                if (r.type == 'out') ...[
-                  _buildRow("领用/借用部门", r.target, labelStyle, contentStyle),
-                  _buildRow("领用人姓名", r.receiver, labelStyle, contentStyle),
-                ],
-                
+                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                  pw.Text("物资名称:"),
+                  pw.Text(r.name, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                ]),
+                pw.SizedBox(height: 5),
+                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                  pw.Text("编码 (Code):"),
+                  pw.Text(r.code),
+                ]),
+                pw.SizedBox(height: 5),
+                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                  pw.Text("数量 (Count):"),
+                  pw.Text(r.count.toString(), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ]),
                 pw.SizedBox(height: 20),
-                pw.Divider(),
-                pw.SizedBox(height: 20),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, 
-                  children: [
-                    pw.Text("经办人：${r.operator}", style: contentStyle),
-                    pw.Text("签字确认：______________", style: contentStyle),
-                  ]
-                ),
+                pw.Text("操作员 (Operator): ${r.operator}"),
+                pw.Text(r.type == 'in' ? "供应商/归还人: ${r.target}" : "领用部门: ${r.target}"),
+                if(r.receiver.isNotEmpty)
+                  pw.Text("经手/领用人: ${r.receiver}"),
+                  
+                pw.SizedBox(height: 50),
+                pw.Divider(borderStyle: pw.BorderStyle.dashed),
+                pw.Text("签字确认: __________________", style: const pw.TextStyle(fontSize: 14)),
               ]
             );
           },
         ),
       );
 
-      await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => doc.save());
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => doc.save(),
+        name: "${r.name}_单据.pdf"
+      );
       
     } catch (e) {
-      // 如果字体加载失败，会在屏幕下方提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("生成失败，请检查字体文件: $e"))
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("PDF生成严重错误: $e")));
+      }
     }
-  }
-
-  // 辅助方法：生成 PDF 行
-  pw.Widget _buildRow(String label, String value, pw.TextStyle labelStyle, pw.TextStyle valueStyle) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text("$label：", style: labelStyle),
-          pw.Text(value, style: valueStyle),
-        ],
-      ),
-    );
   }
 }

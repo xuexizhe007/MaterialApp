@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data_model.dart';
-import 'dart:math';
+import 'scanner_page.dart'; // 确保此文件已创建
 
 class CatalogTab extends StatefulWidget {
   const CatalogTab({super.key});
@@ -41,7 +41,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
       body: TabBarView(
         controller: _tabController,
         children: [
-          // --- 目录列表 ---
+          // --- 1. 目录列表页 ---
           Column(
             children: [
               Padding(
@@ -59,14 +59,14 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                     final item = model.materials[i];
                     if (_searchCtrl.text.isNotEmpty && !item.name.contains(_searchCtrl.text)) return const SizedBox.shrink();
                     return ListTile(
-                      leading: CircleAvatar(child: Text(item.name[0])),
+                      leading: CircleAvatar(child: Text(item.name.isNotEmpty ? item.name[0] : "?")),
                       title: Text(item.name),
                       subtitle: Text("编码:${item.code} | 库存:${item.stock}"),
                       trailing: Text(item.category),
                       onTap: () {
-                         // 点击填充到入库
+                         // 点击列表项，自动填充到入库表单
                          _inCodeCtrl.text = item.code;
-                         _tabController.animateTo(1);
+                         _tabController.animateTo(1); // 切换到入库Tab
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已选中，请填写入库数量")));
                       },
                     );
@@ -76,7 +76,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
             ],
           ),
 
-          // --- 入库表单 ---
+          // --- 2. 入库操作页 ---
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -85,18 +85,29 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                   children: [
                     Expanded(child: TextField(controller: _inCodeCtrl, decoration: const InputDecoration(labelText: "物资编码"))),
                     const SizedBox(width: 10),
+                    
+                    // --- 真实扫码按钮 ---
                     ElevatedButton.icon(
                       icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text("模拟扫码"),
-                      onPressed: () {
-                        // 模拟扫码功能
-                        if (model.materials.isNotEmpty) {
-                          // 随机扫一个存在的
-                          final randomItem = model.materials[Random().nextInt(model.materials.length)];
-                          _inCodeCtrl.text = randomItem.code;
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("扫码成功: ${randomItem.name}")));
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("暂无物资，请先新增")));
+                      label: const Text("扫码"),
+                      onPressed: () async {
+                        // 跳转到扫码页
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const ScannerPage()),
+                        );
+
+                        if (result != null && result is String) {
+                          setState(() {
+                            _inCodeCtrl.text = result;
+                          });
+                          // 检查该码是否已存在
+                          final item = model.findByCode(result);
+                          if (item != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("已识别: ${item.name}")));
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("新物资: $result，请录入信息")));
+                          }
                         }
                       },
                     )
@@ -120,10 +131,14 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
                     onPressed: () {
-                      if (_inCodeCtrl.text.isEmpty) return;
+                      if (_inCodeCtrl.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请输入或扫码获取编码")));
+                        return;
+                      }
+                      // 如果编码不存在，询问是否直接新增
                       final item = model.findByCode(_inCodeCtrl.text);
                       if (item == null) {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("编码不存在，请在目录新增")));
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("编码不存在，请先点击右下角+号新增物资")));
                          return;
                       }
                       model.inbound(
@@ -134,7 +149,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                         ""
                       );
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("入库成功")));
-                      _inCountCtrl.text = "1";
+                      _inCountCtrl.text = "1"; // 重置数量
                     }, 
                     child: const Text("确认入库")
                   ),
@@ -156,6 +171,11 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
     final nameCtrl = TextEditingController();
     final catCtrl = TextEditingController();
     
+    // 如果刚才扫了码但不存在，自动填入
+    if (_inCodeCtrl.text.isNotEmpty) {
+      codeCtrl.text = _inCodeCtrl.text;
+    }
+
     showDialog(context: context, builder: (ctx) => AlertDialog(
       title: const Text("新增物资"),
       content: Column(
@@ -177,6 +197,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
           } else {
             Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("新增成功")));
           }
         }, child: const Text("保存")),
       ],
