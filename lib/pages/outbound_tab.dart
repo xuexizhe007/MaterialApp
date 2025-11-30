@@ -12,14 +12,13 @@ class OutboundTab extends StatefulWidget {
 
 class _OutboundTabState extends State<OutboundTab> {
   final _codeCtrl = TextEditingController();
-  final _nameCtrl = TextEditingController(); // 新增：名称只读
+  final _nameCtrl = TextEditingController();
   final _countCtrl = TextEditingController(text: "1");
   final _deptCtrl = TextEditingController();
   final _receiverCtrl = TextEditingController();
   String _subType = "领用";
   int _currentStock = 0;
 
-  // 统一处理选中逻辑
   void _selectItem(DataModel model, MaterialItem item) {
     setState(() {
       _codeCtrl.text = item.code;
@@ -45,33 +44,36 @@ class _OutboundTabState extends State<OutboundTab> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    // 编码选择行
                     Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _codeCtrl, 
                             decoration: const InputDecoration(labelText: "物资编码", fillColor: Colors.white),
-                            readOnly: true, // 只读
+                            readOnly: true,
                           ),
                         ),
                         const SizedBox(width: 5),
                         IconButton(
                           icon: const Icon(Icons.list_alt, color: Colors.blue),
-                          tooltip: "选择列表",
                           onPressed: () {
-                            // 丰富化的下拉列表
                             showModalBottomSheet(context: context, builder: (ctx) => Column(
                               children: [
                                 const Padding(padding: EdgeInsets.all(16), child: Text("选择出库物资", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                  child: const Text("提示：可到物资目录页搜索后查看详情", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                ),
                                 Expanded(
                                   child: ListView.builder(
                                     itemCount: model.materials.length,
                                     itemBuilder: (c, i) {
                                       final item = model.materials[i];
+                                      // 简单的库存过滤
+                                      if (item.stock <= 0) return const SizedBox.shrink(); 
                                       return ListTile(
                                         title: Text(item.name),
-                                        subtitle: Text("编码:${item.code} | 备注:${item.remark}"),
+                                        subtitle: Text("编码:${item.code}"),
                                         trailing: Text("存:${item.stock}", style: const TextStyle(fontWeight: FontWeight.bold)),
                                         onTap: () {
                                           _selectItem(model, item);
@@ -87,7 +89,6 @@ class _OutboundTabState extends State<OutboundTab> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.qr_code_scanner, color: Colors.orange),
-                          tooltip: "扫码出库",
                           onPressed: () async {
                              final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerPage()));
                              if (result != null) {
@@ -104,14 +105,11 @@ class _OutboundTabState extends State<OutboundTab> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    
-                    // 物品名称 (只读联动)
                     TextField(
                       controller: _nameCtrl,
                       decoration: const InputDecoration(labelText: "物品名称", fillColor: Colors.white, filled: true),
                       readOnly: true,
                     ),
-                    
                     if (_nameCtrl.text.isNotEmpty) 
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
@@ -159,11 +157,15 @@ class _OutboundTabState extends State<OutboundTab> {
                      showDialog(context: context, builder: (_) => AlertDialog(title: const Text("错误"), content: Text(err)));
                    } else {
                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("出库成功")));
-                     _countCtrl.text = "1";
-                     _deptCtrl.clear();
-                     _receiverCtrl.clear();
-                     // 更新库存显示
-                     setState(() { _currentStock -= (int.tryParse(_countCtrl.text) ?? 0); });
+                     
+                     // --- 需求3：清空表单，防止重复操作 ---
+                     setState(() { 
+                       _codeCtrl.clear();
+                       _nameCtrl.clear();
+                       _currentStock = 0;
+                       _countCtrl.text = "1";
+                       // 部门和领用人不清空，方便批量出库给同一个人
+                     });
                    }
                 },
                 child: const Text("确认出库", style: TextStyle(fontSize: 18)),

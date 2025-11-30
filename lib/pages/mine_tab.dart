@@ -12,7 +12,6 @@ class MineTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
-    // 修改：库存 <= 1 显示预警
     final lowStock = model.materials.where((e) => e.stock <= 1).toList();
 
     return Scaffold(
@@ -105,7 +104,7 @@ class RecordsPage extends StatelessWidget {
               children: [
                 Text((isIn ? "+" : "-") + r.count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 IconButton(
-                  icon: const Icon(Icons.share, color: Colors.blue), // 改为分享图标
+                  icon: const Icon(Icons.share, color: Colors.blue),
                   onPressed: () => _exportPdf(context, r),
                 )
               ],
@@ -116,7 +115,6 @@ class RecordsPage extends StatelessWidget {
     );
   }
 
-  // --- 修复：使用 sharePdf 替代 layoutPdf ---
   Future<void> _exportPdf(BuildContext context, RecordItem r) async {
     try {
       final doc = pw.Document();
@@ -131,10 +129,17 @@ class RecordsPage extends StatelessWidget {
            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
              content: Text("字体缺失，中文可能乱码"),
              backgroundColor: Colors.orange,
-             duration: Duration(seconds: 2),
            ));
         }
       }
+
+      // --- 需求4：修复乱码的关键逻辑 ---
+      // 如果字体加载成功，创建一个强制使用该字体的 textStyle
+      // 注意：我们移除了 fontWeight: bold，因为如果 ttf 文件本身不是粗体，
+      // PDF库可能会回退到默认字体导致中文乱码。
+      final textStyle = font != null ? pw.TextStyle(font: font, fontSize: 14) : const pw.TextStyle(fontSize: 14);
+      final titleStyle = font != null ? pw.TextStyle(font: font, fontSize: 24) : const pw.TextStyle(fontSize: 24);
+      final labelStyle = font != null ? pw.TextStyle(font: font, fontSize: 12, color: PdfColors.grey700) : const pw.TextStyle(fontSize: 12, color: PdfColors.grey700);
 
       doc.addPage(
         pw.Page(
@@ -143,43 +148,40 @@ class RecordsPage extends StatelessWidget {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Header(level: 0, child: pw.Text(r.type == 'in' ? "物资入库单" : "物资出库单", style: const pw.TextStyle(fontSize: 24))),
+                pw.Header(level: 0, child: pw.Text(r.type == 'in' ? "物资入库单" : "物资出库单", style: titleStyle)),
                 pw.SizedBox(height: 20),
-                pw.Text("单号 ID: ${r.id}"),
-                pw.Text("日期 Date: ${r.date}"),
+                pw.Text("单号 ID: ${r.id}", style: textStyle),
+                pw.Text("日期 Date: ${r.date}", style: textStyle),
                 pw.Divider(),
                 pw.SizedBox(height: 10),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("物资名称:"),
-                  pw.Text(r.name, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
-                ]),
+                
+                // 使用 Row 布局键值对
+                _buildPdfRow("物资名称:", r.name, labelStyle, textStyle),
                 pw.SizedBox(height: 5),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("编码 (Code):"),
-                  pw.Text(r.code),
-                ]),
+                _buildPdfRow("物资编码:", r.code, labelStyle, textStyle),
                 pw.SizedBox(height: 5),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("数量 (Count):"),
-                  pw.Text(r.count.toString(), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                ]),
+                _buildPdfRow("数量:", r.count.toString(), labelStyle, textStyle),
                 pw.SizedBox(height: 20),
-                pw.Text("操作员 (Operator): ${r.operator}"),
-                pw.Text(r.type == 'in' ? "供应商/归还人: ${r.target}" : "领用部门: ${r.target}"),
+                
+                _buildPdfRow("操作员:", r.operator, labelStyle, textStyle),
+                _buildPdfRow(
+                  r.type == 'in' ? "供应商/归还人:" : "领用部门:", 
+                  r.target, 
+                  labelStyle, 
+                  textStyle
+                ),
                 if(r.receiver.isNotEmpty)
-                  pw.Text("经手/领用人: ${r.receiver}"),
+                  _buildPdfRow("经手/领用人:", r.receiver, labelStyle, textStyle),
                   
                 pw.SizedBox(height: 50),
                 pw.Divider(borderStyle: pw.BorderStyle.dashed),
-                pw.Text("签字确认: __________________", style: const pw.TextStyle(fontSize: 14)),
+                pw.Text("签字确认: __________________", style: textStyle),
               ]
             );
           },
         ),
       );
 
-      // --- 关键修改：使用 sharePdf ---
-      // 这会调起系统的分享面板（保存到文件、发微信等），不依赖系统打印服务，避免 Crash
       await Printing.sharePdf(
         bytes: await doc.save(),
         filename: "${r.name}_${r.id}.pdf"
@@ -190,5 +192,16 @@ class RecordsPage extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("PDF导出失败: $e")));
       }
     }
+  }
+  
+  // 辅助方法构建 PDF 行
+  pw.Widget _buildPdfRow(String label, String value, pw.TextStyle labelStyle, pw.TextStyle valueStyle) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, 
+      children: [
+        pw.Text(label, style: labelStyle),
+        pw.Text(value, style: valueStyle), // 确保这里应用了中文字体
+      ]
+    );
   }
 }
