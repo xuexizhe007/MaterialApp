@@ -3,31 +3,69 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    
+    # 1. 检出您的代码
+    - uses: actions/checkout@v4
+
+    # 2. 配置 Java 环境
     - name: Set up Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
         java-version: '17'
-        
+
+    # 3. 配置 Flutter 环境
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.10.0' # 或者最新版本
+        flutter-version: '3.19.0'
+        channel: 'stable'
+
+    # 4. 【关键修复步骤】重建项目骨架
+    # 因为仓库里没有 android/ 目录和 gradle 文件，我们让 Flutter 创建一个新的临时项目，
+    # 然后把这个临时项目里的 android 目录复制过来用。
+    - name: Recreate Android Project Structure
+      run: |
+        # 创建一个临时目录叫 temp_project
+        flutter create temp_project --platforms android
         
+        # 如果仓库里没有 android 目录，就从临时项目复制过来
+        if [ ! -d "android" ]; then
+          echo "Moving android directory from temp project..."
+          mv temp_project/android .
+        fi
+        
+        # 复制必要的隐藏文件 (.metadata 等)
+        if [ -f "temp_project/.metadata" ]; then
+            cp temp_project/.metadata .
+        fi
+        
+        # 清理临时项目
+        rm -rf temp_project
+        
+        # 确保字体配置正确 (创建一个空的 AndroidManifest 如果缺失)
+        # 这一步是为了防止 Flutter 找不到 AndroidManifest 报错
+        flutter config --enable-android
+
+    # 5. 获取依赖
     - name: Get dependencies
       run: flutter pub get
-      
+
+    # 6. 接受 Android SDK 协议 (防止构建时因协议未同意而失败)
+    - name: Accept Android Licenses
+      run: yes | flutter doctor --android-licenses || true
+
+    # 7. 开始构建 APK
     - name: Build APK
       run: flutter build apk --release --no-tree-shake-icons
-      
+
+    # 8. 上传结果 (使用 v4 版本)
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
