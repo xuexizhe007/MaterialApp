@@ -12,13 +12,13 @@ class MineTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
-    final lowStock = model.materials.where((e) => e.stock <= model.warnThreshold).toList();
+    // 修改：库存 <= 1 显示预警
+    final lowStock = model.materials.where((e) => e.stock <= 1).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text("库存与设置")),
       body: ListView(
         children: [
-          // 用户信息卡片
           Container(
             color: Colors.blue,
             padding: const EdgeInsets.all(20),
@@ -31,22 +31,20 @@ class MineTab extends StatelessWidget {
             ),
           ),
           
-          // 库存预警
           if (lowStock.isNotEmpty)
             ExpansionTile(
-              title: const Text("库存预警", style: TextStyle(color: Colors.red)),
+              title: const Text("库存预警 (<=1)", style: TextStyle(color: Colors.red)),
               leading: const Icon(Icons.warning, color: Colors.red),
               initiallyExpanded: true,
               children: lowStock.map((e) => ListTile(
                 title: Text(e.name),
                 trailing: Text("${e.stock}", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                subtitle: const Text("库存不足"),
+                subtitle: const Text("库存严重不足"),
               )).toList(),
             ),
 
           const Divider(),
           
-          // 操作记录
           ListTile(
             title: const Text("出入库记录 (点击导出PDF)"),
             leading: const Icon(Icons.history),
@@ -56,7 +54,6 @@ class MineTab extends StatelessWidget {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
           ),
           
-          // 设置功能
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16.0),
@@ -108,8 +105,8 @@ class RecordsPage extends StatelessWidget {
               children: [
                 Text((isIn ? "+" : "-") + r.count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 IconButton(
-                  icon: const Icon(Icons.print, color: Colors.blue),
-                  onPressed: () => _printPdf(context, r),
+                  icon: const Icon(Icons.share, color: Colors.blue), // 改为分享图标
+                  onPressed: () => _exportPdf(context, r),
                 )
               ],
             ),
@@ -119,13 +116,12 @@ class RecordsPage extends StatelessWidget {
     );
   }
 
-  // --- 修复后的 PDF 生成逻辑 ---
-  Future<void> _printPdf(BuildContext context, RecordItem r) async {
+  // --- 修复：使用 sharePdf 替代 layoutPdf ---
+  Future<void> _exportPdf(BuildContext context, RecordItem r) async {
     try {
       final doc = pw.Document();
       pw.Font? font;
 
-      // 1. 尝试加载中文字体
       try {
         final fontData = await rootBundle.load("assets/fonts/FangSong.ttf");
         font = pw.Font.ttf(fontData);
@@ -133,15 +129,15 @@ class RecordsPage extends StatelessWidget {
         debugPrint("字体加载失败: $e");
         if (context.mounted) {
            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-             content: Text("警告：字体文件未找到，PDF中文将乱码。请确保 assets/fonts/FangSong.ttf 存在"),
+             content: Text("字体缺失，中文可能乱码"),
              backgroundColor: Colors.orange,
+             duration: Duration(seconds: 2),
            ));
         }
       }
 
       doc.addPage(
         pw.Page(
-          // 2. 安全应用字体
           theme: font != null ? pw.ThemeData.withFont(base: font) : null,
           build: (pw.Context context) {
             return pw.Column(
@@ -182,14 +178,16 @@ class RecordsPage extends StatelessWidget {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => doc.save(),
-        name: "${r.name}_单据.pdf"
+      // --- 关键修改：使用 sharePdf ---
+      // 这会调起系统的分享面板（保存到文件、发微信等），不依赖系统打印服务，避免 Crash
+      await Printing.sharePdf(
+        bytes: await doc.save(),
+        filename: "${r.name}_${r.id}.pdf"
       );
       
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("PDF生成严重错误: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("PDF导出失败: $e")));
       }
     }
   }

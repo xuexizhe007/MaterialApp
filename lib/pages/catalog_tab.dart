@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data_model.dart';
-import 'scanner_page.dart'; // 确保此文件已创建
+import 'scanner_page.dart';
 
 class CatalogTab extends StatefulWidget {
   const CatalogTab({super.key});
@@ -16,6 +16,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
 
   // 入库表单
   final _inCodeCtrl = TextEditingController();
+  final _inNameCtrl = TextEditingController(); // 新增：物品名称（只读）
   final _inCountCtrl = TextEditingController(text: "1");
   final _inSupplierCtrl = TextEditingController();
   String _inSubType = "进货";
@@ -24,6 +25,29 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // 监听 Tab 切换，解决 FAB 消失问题
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // 统一处理选中物品逻辑
+  void _onItemSelected(DataModel model, String code) {
+    final item = model.findByCode(code);
+    if (item != null) {
+      setState(() {
+        _inCodeCtrl.text = item.code;
+        _inNameCtrl.text = item.name;
+      });
+    }
   }
 
   @override
@@ -58,15 +82,25 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                   itemBuilder: (ctx, i) {
                     final item = model.materials[i];
                     if (_searchCtrl.text.isNotEmpty && !item.name.contains(_searchCtrl.text)) return const SizedBox.shrink();
+                    
+                    // 红色预警逻辑
+                    final isLowStock = item.stock <= 1;
+                    
                     return ListTile(
                       leading: CircleAvatar(child: Text(item.name.isNotEmpty ? item.name[0] : "?")),
                       title: Text(item.name),
-                      subtitle: Text("编码:${item.code} | 库存:${item.stock}"),
-                      trailing: Text(item.category),
+                      subtitle: Text("编码:${item.code} | 备注:${item.remark}"), // 显示备注
+                      trailing: Text(
+                        "${item.stock}", 
+                        style: TextStyle(
+                          fontSize: 18, 
+                          fontWeight: FontWeight.bold,
+                          color: isLowStock ? Colors.red : Colors.black // 红色变色
+                        )
+                      ),
                       onTap: () {
-                         // 点击列表项，自动填充到入库表单
-                         _inCodeCtrl.text = item.code;
-                         _tabController.animateTo(1); // 切换到入库Tab
+                         _onItemSelected(model, item.code);
+                         _tabController.animateTo(1); 
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已选中，请填写入库数量")));
                       },
                     );
@@ -81,39 +115,55 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                // 编码选择行
                 Row(
                   children: [
-                    Expanded(child: TextField(controller: _inCodeCtrl, decoration: const InputDecoration(labelText: "物资编码"))),
-                    const SizedBox(width: 10),
-                    
-                    // --- 真实扫码按钮 ---
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text("扫码"),
+                    Expanded(
+                      child: TextField(
+                        controller: _inCodeCtrl, 
+                        decoration: const InputDecoration(labelText: "物资编码", hintText: "请扫码或选择"),
+                        readOnly: true, // 禁止手动输入
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    IconButton(
+                      icon: const Icon(Icons.list_alt, color: Colors.blue),
+                      onPressed: () => _showItemSelector(context, model),
+                      tooltip: "选择列表",
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.qr_code_scanner, color: Colors.green),
                       onPressed: () async {
-                        // 跳转到扫码页
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ScannerPage()),
-                        );
-
+                        final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerPage()));
                         if (result != null && result is String) {
-                          setState(() {
-                            _inCodeCtrl.text = result;
-                          });
-                          // 检查该码是否已存在
                           final item = model.findByCode(result);
                           if (item != null) {
+                            _onItemSelected(model, result);
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("已识别: ${item.name}")));
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("新物资: $result，请录入信息")));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("未录入的编码: $result")));
+                            // 对于新编码，允许填入，但提示需要新增
+                            setState(() {
+                              _inCodeCtrl.text = result;
+                              _inNameCtrl.text = "未录入物资";
+                            });
                           }
                         }
                       },
+                      tooltip: "扫码",
                     )
                   ],
                 ),
                 const SizedBox(height: 10),
+                
+                // 物品名称行 (新增，只读)
+                TextField(
+                  controller: _inNameCtrl,
+                  decoration: const InputDecoration(labelText: "物品名称", filled: true),
+                  readOnly: true,
+                ),
+                const SizedBox(height: 10),
+                
                 TextField(controller: _inCountCtrl, decoration: const InputDecoration(labelText: "数量"), keyboardType: TextInputType.number),
                 const SizedBox(height: 10),
                 DropdownButtonFormField(
@@ -132,13 +182,12 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
                     onPressed: () {
                       if (_inCodeCtrl.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请输入或扫码获取编码")));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先扫码或选择物资")));
                         return;
                       }
-                      // 如果编码不存在，询问是否直接新增
                       final item = model.findByCode(_inCodeCtrl.text);
                       if (item == null) {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("编码不存在，请先点击右下角+号新增物资")));
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("该物资未在目录中，请先新增")));
                          return;
                       }
                       model.inbound(
@@ -149,7 +198,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                         ""
                       );
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("入库成功")));
-                      _inCountCtrl.text = "1"; // 重置数量
+                      _inCountCtrl.text = "1";
                     }, 
                     child: const Text("确认入库")
                   ),
@@ -166,13 +215,40 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
     );
   }
 
+  // 下拉选择列表
+  void _showItemSelector(BuildContext context, DataModel model) {
+    showModalBottomSheet(context: context, builder: (ctx) {
+      return Column(
+        children: [
+          const Padding(padding: EdgeInsets.all(16), child: Text("选择物资", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
+          Expanded(
+            child: ListView.builder(
+              itemCount: model.materials.length,
+              itemBuilder: (c, i) {
+                final item = model.materials[i];
+                return ListTile(
+                  title: Text(item.name),
+                  subtitle: Text("编码:${item.code} | 备注:${item.remark}"),
+                  trailing: Text("存:${item.stock}"),
+                  onTap: () {
+                    _onItemSelected(model, item.code);
+                    Navigator.pop(ctx);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
   void _showAddDialog(BuildContext context, DataModel model) {
     final codeCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
-    final catCtrl = TextEditingController();
+    final remarkCtrl = TextEditingController(); // 改为备注
     
-    // 如果刚才扫了码但不存在，自动填入
-    if (_inCodeCtrl.text.isNotEmpty) {
+    if (_inCodeCtrl.text.isNotEmpty && model.findByCode(_inCodeCtrl.text) == null) {
       codeCtrl.text = _inCodeCtrl.text;
     }
 
@@ -181,18 +257,31 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: "条码/编码")),
+          Row(
+            children: [
+              Expanded(child: TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: "条码/编码"))),
+              IconButton(
+                icon: const Icon(Icons.qr_code),
+                onPressed: () async {
+                   final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerPage()));
+                   if(result != null) codeCtrl.text = result;
+                },
+              )
+            ],
+          ),
           const SizedBox(height: 10),
           TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "名称")),
           const SizedBox(height: 10),
-          TextField(controller: catCtrl, decoration: const InputDecoration(labelText: "分类")),
+          TextField(controller: remarkCtrl, decoration: const InputDecoration(labelText: "备注")), // 分类改为备注
         ],
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
         ElevatedButton(onPressed: () {
           if(codeCtrl.text.isEmpty || nameCtrl.text.isEmpty) return;
-          final err = model.addMaterial(codeCtrl.text, nameCtrl.text, catCtrl.text, "");
+          // 注意：DataModel addMaterial 第三个参数是 category，第四个是 remark。
+          // 这里我们将 UI 的 "备注" 存入 remark，category 留空或存入 "通用"
+          final err = model.addMaterial(codeCtrl.text, nameCtrl.text, "", remarkCtrl.text);
           if (err != null) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
           } else {
