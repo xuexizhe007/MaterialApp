@@ -14,9 +14,9 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   late TabController _tabController;
   final _searchCtrl = TextEditingController();
   int _currentPage = 0;
-  final int _pageSize = 10;
+  // 需求2：改为5项每页
+  final int _pageSize = 5; 
 
-  // 入库表单
   final _inCodeCtrl = TextEditingController();
   final _inNameCtrl = TextEditingController();
   final _inCountCtrl = TextEditingController(text: "1");
@@ -57,7 +57,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
 
-    // 筛选
     final filteredMaterials = model.materials.where((item) {
       final q = _searchCtrl.text.toLowerCase();
       return item.name.toLowerCase().contains(q) || 
@@ -65,10 +64,8 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
              item.remark.toLowerCase().contains(q);
     }).toList();
     
-    // 排序：库存降序
     filteredMaterials.sort((a, b) => b.stock.compareTo(a.stock));
 
-    // 分页
     final totalItems = filteredMaterials.length;
     final totalPages = (totalItems / _pageSize).ceil();
     if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
@@ -131,7 +128,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                           ],
                         ),
                         onTap: () {
-                          // 传递 ID 而不是对象，更安全
                            Navigator.push(context, MaterialPageRoute(builder: (c) => MaterialDetailPage(itemId: item.id)));
                         },
                       ),
@@ -150,7 +146,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                         icon: const Icon(Icons.chevron_left),
                         onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
                       ),
-                      Text("第 ${_currentPage + 1} / $totalPages 页 (共 $totalItems 条)"),
+                      Text("第 ${_currentPage + 1} / $totalPages 页"),
                       IconButton(
                         icon: const Icon(Icons.chevron_right),
                         onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
@@ -161,7 +157,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
             ],
           ),
 
-          // --- 2. 入库操作页 ---
+          // --- 2. 入库操作页 (不变) ---
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -343,7 +339,8 @@ class _SearchableListSheet extends StatefulWidget {
 class _SearchableListSheetState extends State<_SearchableListSheet> {
   final _searchCtrl = TextEditingController();
   int _currentPage = 0;
-  final int _pageSize = 10;
+  // 需求2：改为5项每页
+  final int _pageSize = 5; 
 
   @override
   Widget build(BuildContext context) {
@@ -422,25 +419,36 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
   }
 }
 
-// --- 重构后的详情页 (基于 ID) ---
-class MaterialDetailPage extends StatelessWidget {
-  final String itemId; // 仅接收 ID
-  
+// --- 需求1：详情页历史记录增加分页，改为 StatefulWidget ---
+class MaterialDetailPage extends StatefulWidget {
+  final String itemId;
   const MaterialDetailPage({super.key, required this.itemId});
+
+  @override
+  State<MaterialDetailPage> createState() => _MaterialDetailPageState();
+}
+
+class _MaterialDetailPageState extends State<MaterialDetailPage> {
+  int _currentPage = 0;
+  final int _pageSize = 5; // 需求2：5项每页
 
   @override
   Widget build(BuildContext context) {
     return Consumer<DataModel>(
       builder: (context, model, child) {
-        // 通过 ID 查找，即使 Code 改了也能找到
-        final currentItem = model.findById(itemId);
-        
+        final currentItem = model.findById(widget.itemId);
         if (currentItem == null) {
           return Scaffold(appBar: AppBar(), body: const Center(child: Text("物资已删除")));
         }
 
-        // 历史记录也通过 materialId 过滤，这才是最稳健的
-        final history = model.records.where((r) => r.materialId == currentItem.id).toList();
+        final allHistory = model.records.where((r) => r.materialId == currentItem.id).toList();
+        
+        // 分页逻辑
+        final totalItems = allHistory.length;
+        final totalPages = (totalItems / _pageSize).ceil();
+        if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
+        if (totalItems == 0) _currentPage = 0;
+        final pagedHistory = allHistory.skip(_currentPage * _pageSize).take(_pageSize).toList();
 
         return Scaffold(
           appBar: AppBar(
@@ -473,17 +481,16 @@ class MaterialDetailPage extends StatelessWidget {
                 child: Align(alignment: Alignment.centerLeft, child: Text("出入库明细", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
               ),
               Expanded(
-                child: history.isEmpty 
+                child: pagedHistory.isEmpty 
                   ? const Center(child: Text("暂无记录"))
                   : ListView.builder(
-                      itemCount: history.length,
+                      itemCount: pagedHistory.length,
                       itemBuilder: (ctx, i) {
-                        final r = history[i];
+                        final r = pagedHistory[i];
                         final isIn = r.type == 'in';
                         return ListTile(
                           leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
                           title: Text(isIn ? "入库: ${r.subType}" : "出库: ${r.subType}"),
-                          // 这里显示的是记录时的快照信息，还是现在的名字？通常建议显示快照
                           subtitle: Text("${r.date}\n${isIn ? '供应商: ' + r.target : '领用人: ' + r.receiver + ' (' + r.target + ')'}"),
                           isThreeLine: true,
                           trailing: Text((isIn ? "+" : "-") + r.count.toString(), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
@@ -491,6 +498,26 @@ class MaterialDetailPage extends StatelessWidget {
                       },
                     ),
               ),
+              // 分页条
+              if (totalPages > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  color: Colors.grey[200],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                      ),
+                      Text("${_currentPage + 1} / $totalPages 页"),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
+                      ),
+                    ],
+                  ),
+                )
             ],
           ),
         );
@@ -536,9 +563,7 @@ class MaterialDetailPage extends StatelessWidget {
                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("编码和名称不能为空")));
                  return;
               }
-              // 传递 ID 进行更新，安全可靠
               final err = model.updateMaterial(item.id, codeCtrl.text, nameCtrl.text, remarkCtrl.text);
-              
               if (err != null) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
               } else {

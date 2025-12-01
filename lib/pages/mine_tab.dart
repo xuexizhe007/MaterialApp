@@ -1,26 +1,39 @@
-import 'dart:io'; // 用于文件读写
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-// PDF相关
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-// 新增插件
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:intl/intl.dart'; // 用于生成文件名的时间戳
-
+import 'package:intl/intl.dart';
 import '../data_model.dart';
 
-class MineTab extends StatelessWidget {
+class MineTab extends StatefulWidget {
   const MineTab({super.key});
+
+  @override
+  State<MineTab> createState() => _MineTabState();
+}
+
+class _MineTabState extends State<MineTab> {
+  // 需求1：库存预警也分页
+  int _warningPage = 0;
+  final int _pageSize = 5; // 需求2：5项每页
 
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
     final lowStock = model.materials.where((e) => e.stock <= 1).toList();
+    
+    // 预警分页计算
+    final totalWarning = lowStock.length;
+    final totalWarningPages = (totalWarning / _pageSize).ceil();
+    if (_warningPage >= totalWarningPages && totalWarningPages > 0) _warningPage = totalWarningPages - 1;
+    if (totalWarning == 0) _warningPage = 0;
+    final pagedLowStock = lowStock.skip(_warningPage * _pageSize).take(_pageSize).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text("库存与设置")),
@@ -43,11 +56,32 @@ class MineTab extends StatelessWidget {
               title: const Text("库存预警 (<=1)", style: TextStyle(color: Colors.red)),
               leading: const Icon(Icons.warning, color: Colors.red),
               initiallyExpanded: true,
-              children: lowStock.map((e) => ListTile(
-                title: Text(e.name),
-                trailing: Text("${e.stock}", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                subtitle: const Text("库存严重不足"),
-              )).toList(),
+              children: [
+                ...pagedLowStock.map((e) => ListTile(
+                  title: Text(e.name),
+                  trailing: Text("${e.stock}", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  subtitle: const Text("库存严重不足"),
+                )).toList(),
+                // 预警列表分页条
+                if (totalWarningPages > 1)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: _warningPage > 0 ? () => setState(() => _warningPage--) : null,
+                        ),
+                        Text("${_warningPage + 1} / $totalWarningPages 页"),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: _warningPage < totalWarningPages - 1 ? () => setState(() => _warningPage++) : null,
+                        ),
+                      ],
+                    ),
+                  )
+              ],
             ),
 
           const Divider(),
@@ -60,7 +94,6 @@ class MineTab extends StatelessWidget {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
           ),
           
-          // --- 需求优化：文件级数据迁移 ---
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16.0),
@@ -79,7 +112,6 @@ class MineTab extends StatelessWidget {
             onTap: () => _importDataFile(context, model),
           ),
 
-          // --- 安全清空 ---
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16.0),
@@ -128,67 +160,37 @@ class MineTab extends StatelessWidget {
     );
   }
 
-  // --- 实现导出逻辑 ---
   Future<void> _exportDataFile(BuildContext context, DataModel model) async {
     try {
-      // 1. 获取 JSON 字符串
       final jsonStr = model.exportData();
-      
-      // 2. 获取临时目录
       final directory = await getTemporaryDirectory();
       final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
       final fileName = "warehouse_backup_$dateStr.json";
       final file = File('${directory.path}/$fileName');
-      
-      // 3. 写入文件
       await file.writeAsString(jsonStr);
-      
-      // 4. 调用系统分享
-      // Share.shareXFiles 需要 share_plus 插件
       if (context.mounted) {
-        final result = await Share.shareXFiles(
-          [XFile(file.path)], 
-          text: '物资管理系统数据备份 ($dateStr)',
-          subject: fileName
-        );
-        
-        if (result.status == ShareResultStatus.success) {
-           // 分享成功（部分系统可能不返回准确状态）
-        }
+        await Share.shareXFiles([XFile(file.path)], text: '物资管理系统数据备份 ($dateStr)', subject: fileName);
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("导出失败: $e")));
-      }
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("导出失败: $e")));
     }
   }
 
-  // --- 实现导入逻辑 ---
   Future<void> _importDataFile(BuildContext context, DataModel model) async {
     try {
-      // 1. 调起文件选择器
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'txt'], // 允许 .json 或 .txt
-      );
-
+      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json', 'txt']);
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
-        
-        // 2. 读取文件内容
         final jsonStr = await file.readAsString();
-        
-        // 3. 确认对话框
         if (context.mounted) {
            showDialog(context: context, builder: (c) => AlertDialog(
              title: const Text("确认恢复"),
-             content: const Text("导入数据将覆盖或合并现有数据，是否继续？\n(建议先备份当前数据)"),
+             content: const Text("导入数据将覆盖或合并现有数据，是否继续？"),
              actions: [
                TextButton(onPressed: () => Navigator.pop(c), child: const Text("取消")),
                ElevatedButton(
                  onPressed: () async {
                    Navigator.pop(c);
-                   // 4. 执行导入
                    final err = await model.importData(jsonStr);
                    if (context.mounted) {
                      if (err == null) {
@@ -205,41 +207,109 @@ class MineTab extends StatelessWidget {
         }
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("读取文件失败: $e")));
-      }
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("读取文件失败: $e")));
     }
   }
 }
 
-class RecordsPage extends StatelessWidget {
+// --- 需求1 & 3：操作记录页重构（搜索 + 分页）---
+class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
+
+  @override
+  State<RecordsPage> createState() => _RecordsPageState();
+}
+
+class _RecordsPageState extends State<RecordsPage> {
+  final _searchCtrl = TextEditingController();
+  int _currentPage = 0;
+  final int _pageSize = 5; // 需求2：5项每页
+
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
+    
+    // 需求3：搜索功能
+    final filteredRecords = model.records.where((r) {
+      final q = _searchCtrl.text.toLowerCase();
+      return r.name.toLowerCase().contains(q); // 搜索物资名称
+    }).toList();
+
+    // 分页逻辑
+    final totalItems = filteredRecords.length;
+    final totalPages = (totalItems / _pageSize).ceil();
+    if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
+    if (totalItems == 0) _currentPage = 0;
+    final pagedRecords = filteredRecords.skip(_currentPage * _pageSize).take(_pageSize).toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text("操作记录")),
-      body: ListView.builder(
-        itemCount: model.records.length,
-        itemBuilder: (c, i) {
-          final r = model.records[i];
-          final isIn = r.type == 'in';
-          return ListTile(
-            leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
-            title: Text(r.name),
-            subtitle: Text("${r.date} | ${r.subType}"),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text((isIn ? "+" : "-") + r.count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.share, color: Colors.blue),
-                  onPressed: () => _exportPdf(context, r),
-                )
-              ],
+      body: Column(
+        children: [
+          // 搜索栏
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: "搜索物资名称",
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              onChanged: (v) => setState(() => _currentPage = 0), // 搜索时重置页码
             ),
-          );
-        },
+          ),
+          
+          // 列表内容
+          Expanded(
+            child: pagedRecords.isEmpty
+                ? const Center(child: Text("无相关记录"))
+                : ListView.builder(
+                    itemCount: pagedRecords.length,
+                    itemBuilder: (c, i) {
+                      final r = pagedRecords[i];
+                      final isIn = r.type == 'in';
+                      return ListTile(
+                        leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
+                        title: Text(r.name),
+                        subtitle: Text("${r.date} | ${r.subType}"),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text((isIn ? "+" : "-") + r.count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            IconButton(
+                              icon: const Icon(Icons.share, color: Colors.blue),
+                              onPressed: () => _exportPdf(context, r),
+                            )
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          
+          // 需求1：分页条
+          if (totalPages > 1)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              color: Colors.grey[200],
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                  ),
+                  Text("第 ${_currentPage + 1} / $totalPages 页"),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
