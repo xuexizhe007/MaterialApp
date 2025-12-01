@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 引入SP
 import 'data_model.dart';
 import 'pages/dashboard.dart';
 
 void main() {
   runApp(
-    // 全局注入数据状态管理
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => DataModel()),
@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '物资管理系统 V1.3',
+      title: '物资管理系统 V1.4',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
@@ -44,10 +44,29 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _userController = TextEditingController(text: "仓库管理员");
+  final _userController = TextEditingController();
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedUser();
+  }
+
+  // --- 需求3：加载保存的用户名 ---
+  Future<void> _loadSavedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUser = prefs.getString('saved_user') ?? "仓库管理员";
+    setState(() {
+      _userController.text = savedUser;
+      _isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
     return Scaffold(
       body: Center(
         child: Padding(
@@ -58,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
               const Icon(Icons.inventory_2, size: 80, color: Colors.blue),
               const SizedBox(height: 20),
               const Text("物资管理系统", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const Text("V1.3 移动端", style: TextStyle(color: Colors.grey)),
+              const Text("V1.4 移动端", style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 40),
               TextField(
                 controller: _userController,
@@ -74,16 +93,23 @@ class _LoginPageState extends State<LoginPage> {
                 child: ElevatedButton(
                   onPressed: () async {
                     if (_userController.text.isEmpty) return;
-                    // 初始化数据
-                    final model = Provider.of<DataModel>(context, listen: false);
-                    await model.init(); 
-                    model.setCurrentUser(_userController.text);
                     
+                    // --- 需求3：保存用户名 ---
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString('saved_user', _userController.text);
+
+                    // 初始化数据
                     if (context.mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => const DashboardPage()),
-                      );
+                      final model = Provider.of<DataModel>(context, listen: false);
+                      await model.init(); 
+                      model.setCurrentUser(_userController.text);
+                      
+                      if (context.mounted) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (context) => const DashboardPage()),
+                        );
+                      }
                     }
                   },
                   child: const Text("登 录", style: TextStyle(fontSize: 18)),

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
-// 物资模型
 class MaterialItem {
   String code;
   String name;
@@ -32,18 +31,17 @@ class MaterialItem {
   );
 }
 
-// 记录模型
 class RecordItem {
   String id;
-  String type; // in, out
-  String subType; // 进货, 领用等
+  String type; 
+  String subType;
   String code;
   String name;
   int count;
   String date;
   String operator;
-  String target; // 供应商/部门
-  String receiver; // 经手人
+  String target;
+  String receiver;
 
   RecordItem({
     required this.id, required this.type, required this.subType,
@@ -98,8 +96,35 @@ class DataModel extends ChangeNotifier {
     prefs.setString('materials', jsonEncode(_materials.map((e) => e.toJson()).toList()));
     prefs.setString('records', jsonEncode(_records.map((e) => e.toJson()).toList()));
   }
+  
+  // --- 需求2：数据导出 ---
+  String exportData() {
+    final data = {
+      "materials": _materials.map((e) => e.toJson()).toList(),
+      "records": _records.map((e) => e.toJson()).toList(),
+      "version": "1.4"
+    };
+    return jsonEncode(data);
+  }
+  
+  // --- 需求2：数据导入 ---
+  Future<String?> importData(String jsonStr) async {
+    try {
+      final Map<String, dynamic> data = jsonDecode(jsonStr);
+      if (data['materials'] != null) {
+        _materials = (data['materials'] as List).map((e) => MaterialItem.fromJson(e)).toList();
+      }
+      if (data['records'] != null) {
+        _records = (data['records'] as List).map((e) => RecordItem.fromJson(e)).toList();
+      }
+      await _save();
+      notifyListeners();
+      return null; // Success
+    } catch (e) {
+      return "数据格式错误: $e";
+    }
+  }
 
-  // 新增物资
   String? addMaterial(String code, String name, String category, String remark) {
     if (_materials.any((e) => e.code == code)) return "编码已存在";
     _materials.add(MaterialItem(code: code, name: name, category: category, remark: remark));
@@ -108,7 +133,6 @@ class DataModel extends ChangeNotifier {
     return null;
   }
 
-  // 入库
   void inbound(String code, int count, String subType, String supplier, String remark) {
     final item = _materials.firstWhere((e) => e.code == code);
     item.stock += count;
@@ -124,7 +148,6 @@ class DataModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 出库
   String? outbound(String code, int count, String subType, String dept, String receiver) {
     final item = _materials.firstWhere((e) => e.code == code);
     if (item.stock < count) return "库存不足，当前仅剩 ${item.stock}";
@@ -152,7 +175,8 @@ class DataModel extends ChangeNotifier {
 
   Future<void> clearData() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove('materials');
+    await prefs.remove('records');
     _materials = [];
     _records = [];
     notifyListeners();
