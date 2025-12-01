@@ -97,17 +97,15 @@ class DataModel extends ChangeNotifier {
     prefs.setString('records', jsonEncode(_records.map((e) => e.toJson()).toList()));
   }
   
-  // --- 需求2：数据导出 ---
   String exportData() {
     final data = {
       "materials": _materials.map((e) => e.toJson()).toList(),
       "records": _records.map((e) => e.toJson()).toList(),
-      "version": "1.4"
+      "version": "1.5"
     };
     return jsonEncode(data);
   }
   
-  // --- 需求2：数据导入 ---
   Future<String?> importData(String jsonStr) async {
     try {
       final Map<String, dynamic> data = jsonDecode(jsonStr);
@@ -119,7 +117,7 @@ class DataModel extends ChangeNotifier {
       }
       await _save();
       notifyListeners();
-      return null; // Success
+      return null;
     } catch (e) {
       return "数据格式错误: $e";
     }
@@ -131,6 +129,17 @@ class DataModel extends ChangeNotifier {
     _save();
     notifyListeners();
     return null;
+  }
+
+  // --- 新增：修改物资信息 ---
+  void updateMaterial(String code, String newName, String newRemark) {
+    final index = _materials.indexWhere((e) => e.code == code);
+    if (index != -1) {
+      _materials[index].name = newName;
+      _materials[index].remark = newRemark;
+      _save();
+      notifyListeners(); // 通知UI刷新
+    }
   }
 
   void inbound(String code, int count, String subType, String supplier, String remark) {

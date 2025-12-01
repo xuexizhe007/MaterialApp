@@ -15,7 +15,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   
   // 目录页状态
   final _searchCtrl = TextEditingController();
-  int _currentPage = 0; // 需求5：分页
+  int _currentPage = 0;
   final int _pageSize = 10;
 
   // 入库表单
@@ -25,7 +25,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   final _inSupplierCtrl = TextEditingController();
   String _inSubType = "进货";
   
-  // 需求1：防抖锁
+  // 防抖锁
   bool _isSubmitting = false;
 
   @override
@@ -35,7 +35,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
-    // 搜索文字变化时重置页码
     _searchCtrl.addListener(() {
        if(_currentPage != 0) setState(() => _currentPage = 0);
     });
@@ -70,11 +69,13 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
              item.code.toLowerCase().contains(q) ||
              item.remark.toLowerCase().contains(q);
     }).toList();
+    
+    // --- 需求：库存降序排序 ---
+    filteredMaterials.sort((a, b) => b.stock.compareTo(a.stock));
 
     // 2. 分页计算
     final totalItems = filteredMaterials.length;
     final totalPages = (totalItems / _pageSize).ceil();
-    // 修正页码越界
     if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
     if (totalItems == 0) _currentPage = 0;
 
@@ -143,7 +144,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                   },
                 ),
               ),
-              // --- 需求5：分页控制条 ---
+              // 分页控制条
               if (totalPages > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -183,7 +184,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                     const SizedBox(width: 5),
                     IconButton(
                       icon: const Icon(Icons.list_alt, color: Colors.blue),
-                      // --- 需求4：调用高级选择弹窗 ---
                       onPressed: () => showSearchableSelectionSheet(context, model, (code) {
                         _onItemSelectedForInbound(model, code);
                       }),
@@ -232,23 +232,18 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                    // --- 需求1：防抖逻辑 ---
                     onPressed: _isSubmitting ? null : () async {
                       if (_inCodeCtrl.text.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先扫码或选择物资")));
                         return;
                       }
-                      
-                      // 锁定按钮
                       setState(() => _isSubmitting = true);
-
-                      // 模拟网络或处理延时，并确保 1 秒内不能重复点击
                       await Future.delayed(const Duration(seconds: 1));
 
                       final item = model.findByCode(_inCodeCtrl.text);
                       if (item == null) {
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("物资不存在，请先新增")));
-                         setState(() => _isSubmitting = false); // 解锁
+                         setState(() => _isSubmitting = false);
                          return;
                       }
                       model.inbound(
@@ -265,7 +260,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                           _inCodeCtrl.clear();
                           _inNameCtrl.clear();
                           _inCountCtrl.text = "1";
-                          _isSubmitting = false; // 解锁
+                          _isSubmitting = false;
                         });
                       }
                     }, 
@@ -333,11 +328,11 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   }
 }
 
-// --- 需求4 & 5：全功能选择弹窗 (独立组件) ---
+// --- 选择器逻辑 ---
 void showSearchableSelectionSheet(BuildContext context, DataModel model, Function(String) onSelected) {
   showModalBottomSheet(
     context: context,
-    isScrollControlled: true, // 允许全屏
+    isScrollControlled: true, 
     useSafeArea: true,
     builder: (ctx) => _SearchableListSheet(model: model, onSelected: onSelected),
   );
@@ -359,15 +354,16 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // 筛选
     final filtered = widget.model.materials.where((item) {
       final q = _searchCtrl.text.toLowerCase();
       return item.name.toLowerCase().contains(q) || 
              item.code.toLowerCase().contains(q) ||
              item.remark.toLowerCase().contains(q);
     }).toList();
+    
+    // 弹窗中也按库存降序
+    filtered.sort((a, b) => b.stock.compareTo(a.stock));
 
-    // 分页
     final totalItems = filtered.length;
     final totalPages = (totalItems / _pageSize).ceil();
     if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
@@ -376,7 +372,7 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
 
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.8, // 默认高度
+      initialChildSize: 0.8,
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (_, scrollController) => Column(
@@ -399,7 +395,6 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
                 final item = paged[i];
                 return ListTile(
                   title: Text(item.name),
-                  // --- 需求4：显示备注 ---
                   subtitle: Text("编码:${item.code} | 备注:${item.remark}"),
                   trailing: Text("存:${item.stock}", style: const TextStyle(fontWeight: FontWeight.bold)),
                   onTap: () {
@@ -410,7 +405,6 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
               },
             ),
           ),
-          // --- 需求5：选择列表分页条 ---
           if (totalPages > 1)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -436,53 +430,120 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
   }
 }
 
-// 详情页保持不变，但为了文件完整性，这里也放上
+// --- 详情页：增加编辑功能 ---
 class MaterialDetailPage extends StatelessWidget {
   final MaterialItem item;
   const MaterialDetailPage({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {
-    final model = Provider.of<DataModel>(context);
-    final history = model.records.where((r) => r.code == item.code).toList();
-    return Scaffold(
-      appBar: AppBar(title: Text(item.name)),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            color: Colors.blue[50],
-            child: Column(
-              children: [
-                Text("当前库存", style: TextStyle(color: Colors.blue[800])),
-                Text("${item.stock}", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.blue[800])),
-                const SizedBox(height: 10),
-                Text("编码: ${item.code}"),
-                Text("备注: ${item.remark}"),
-              ],
-            ),
+    // 使用 Consumer 监听 Model 变化，确保修改后页面刷新
+    return Consumer<DataModel>(
+      builder: (context, model, child) {
+        // 重新获取 item 引用，防止失效
+        final currentItem = model.findByCode(item.code) ?? item;
+        final history = model.records.where((r) => r.code == currentItem.code).toList();
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(currentItem.name),
+            actions: [
+              // --- 需求：编辑按钮 ---
+              IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: "修改信息",
+                onPressed: () => _showEditDialog(context, model, currentItem),
+              )
+            ],
           ),
-          const Padding(
-            padding: EdgeInsets.all(12.0),
-            child: Align(alignment: Alignment.centerLeft, child: Text("出入库明细", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
-          ),
-          Expanded(
-            child: history.isEmpty 
-              ? const Center(child: Text("暂无记录"))
-              : ListView.builder(
-                  itemCount: history.length,
-                  itemBuilder: (ctx, i) {
-                    final r = history[i];
-                    final isIn = r.type == 'in';
-                    return ListTile(
-                      leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
-                      title: Text(isIn ? "入库: ${r.subType}" : "出库: ${r.subType}"),
-                      subtitle: Text("${r.date}\n${isIn ? '供应商: ' + r.target : '领用人: ' + r.receiver + ' (' + r.target + ')'}"),
-                      isThreeLine: true,
-                      trailing: Text((isIn ? "+" : "-") + r.count.toString(), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
-                    );
-                  },
+          body: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                color: Colors.blue[50],
+                child: Column(
+                  children: [
+                    Text("当前库存", style: TextStyle(color: Colors.blue[800])),
+                    Text("${currentItem.stock}", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.blue[800])),
+                    const SizedBox(height: 10),
+                    Text("编码: ${currentItem.code}"),
+                    Text("备注: ${currentItem.remark}"),
+                  ],
                 ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: Align(alignment: Alignment.centerLeft, child: Text("出入库明细", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+              ),
+              Expanded(
+                child: history.isEmpty 
+                  ? const Center(child: Text("暂无记录"))
+                  : ListView.builder(
+                      itemCount: history.length,
+                      itemBuilder: (ctx, i) {
+                        final r = history[i];
+                        final isIn = r.type == 'in';
+                        return ListTile(
+                          leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
+                          title: Text(isIn ? "入库: ${r.subType}" : "出库: ${r.subType}"),
+                          subtitle: Text("${r.date}\n${isIn ? '供应商: ' + r.target : '领用人: ' + r.receiver + ' (' + r.target + ')'}"),
+                          isThreeLine: true,
+                          trailing: Text((isIn ? "+" : "-") + r.count.toString(), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
+                        );
+                      },
+                    ),
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  // --- 需求：编辑对话框 ---
+  void _showEditDialog(BuildContext context, DataModel model, MaterialItem item) {
+    final nameCtrl = TextEditingController(text: item.name);
+    final remarkCtrl = TextEditingController(text: item.remark);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("修改物资信息"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 编码只读
+            TextField(
+              controller: TextEditingController(text: item.code),
+              decoration: const InputDecoration(labelText: "编码 (不可修改)", filled: true, fillColor: Colors.black12),
+              readOnly: true,
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(labelText: "名称"),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: remarkCtrl,
+              decoration: const InputDecoration(labelText: "备注"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.isEmpty) {
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("名称不能为空")));
+                 return;
+              }
+              // 调用 Model 更新方法
+              model.updateMaterial(item.code, nameCtrl.text, remarkCtrl.text);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("修改成功")));
+            },
+            child: const Text("保存"),
           ),
         ],
       ),
