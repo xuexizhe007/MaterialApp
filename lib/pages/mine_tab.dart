@@ -1,9 +1,17 @@
+import 'dart:io'; // 用于文件读写
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+// PDF相关
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+// 新增插件
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart'; // 用于生成文件名的时间戳
+
 import '../data_model.dart';
 
 class MineTab extends StatelessWidget {
@@ -52,57 +60,26 @@ class MineTab extends StatelessWidget {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
           ),
           
-          // --- 需求2：数据迁移 ---
+          // --- 需求优化：文件级数据迁移 ---
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16.0),
-            child: Text("数据迁移 (更换手机时使用)", style: TextStyle(color: Colors.grey)),
+            child: Text("数据迁移 (文件备份)", style: TextStyle(color: Colors.grey)),
           ),
           ListTile(
             leading: const Icon(Icons.upload_file, color: Colors.purple),
-            title: const Text("数据备份 (导出)"),
-            subtitle: const Text("复制数据码到剪贴板"),
-            onTap: () {
-              final jsonStr = model.exportData();
-              Clipboard.setData(ClipboardData(text: jsonStr));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("数据已复制到剪贴板，请发送到新手机")));
-            },
+            title: const Text("导出备份文件 (.json)"),
+            subtitle: const Text("推荐：生成文件发送到微信或保存"),
+            onTap: () => _exportDataFile(context, model),
           ),
           ListTile(
             leading: const Icon(Icons.download, color: Colors.purple),
-            title: const Text("数据恢复 (导入)"),
-            onTap: () {
-              final ctrl = TextEditingController();
-              showDialog(context: context, builder: (ctx) => AlertDialog(
-                title: const Text("恢复数据"),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text("请粘贴旧手机生成的备份数据码：", style: TextStyle(fontSize: 12)),
-                    const SizedBox(height: 10),
-                    TextField(controller: ctrl, maxLines: 3, decoration: const InputDecoration(border: OutlineInputBorder())),
-                  ],
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
-                  ElevatedButton(onPressed: () async {
-                    if(ctrl.text.isEmpty) return;
-                    final err = await model.importData(ctrl.text);
-                    if(context.mounted) {
-                      Navigator.pop(ctx);
-                      if(err == null) {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("数据恢复成功！")));
-                      } else {
-                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("恢复失败: $err")));
-                      }
-                    }
-                  }, child: const Text("确定导入")),
-                ],
-              ));
-            },
+            title: const Text("导入备份文件"),
+            subtitle: const Text("选择 .json 文件恢复数据"),
+            onTap: () => _importDataFile(context, model),
           ),
 
-          // --- 需求6：安全清空 ---
+          // --- 安全清空 ---
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16.0),
@@ -113,7 +90,6 @@ class MineTab extends StatelessWidget {
             title: const Text("清空所有数据"),
             onTap: () {
               final confirmCtrl = TextEditingController();
-              // 使用 StatefulBuilder 来更新 Dialog 内部按钮状态
               showDialog(context: context, builder: (c) => StatefulBuilder(
                 builder: (context, setState) => AlertDialog(
                   title: const Text("警告"),
@@ -127,7 +103,7 @@ class MineTab extends StatelessWidget {
                       TextField(
                         controller: confirmCtrl,
                         decoration: const InputDecoration(hintText: "清空数据"),
-                        onChanged: (v) => setState((){}), // 刷新按钮状态
+                        onChanged: (v) => setState((){}),
                       ),
                     ],
                   ),
@@ -135,7 +111,6 @@ class MineTab extends StatelessWidget {
                     TextButton(onPressed: () => Navigator.pop(c), child: const Text("取消")),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                      // 只有输入正确才启用按钮
                       onPressed: confirmCtrl.text == "清空数据" ? () {
                         model.clearData();
                         Navigator.pop(c);
@@ -152,16 +127,96 @@ class MineTab extends StatelessWidget {
       ),
     );
   }
+
+  // --- 实现导出逻辑 ---
+  Future<void> _exportDataFile(BuildContext context, DataModel model) async {
+    try {
+      // 1. 获取 JSON 字符串
+      final jsonStr = model.exportData();
+      
+      // 2. 获取临时目录
+      final directory = await getTemporaryDirectory();
+      final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      final fileName = "warehouse_backup_$dateStr.json";
+      final file = File('${directory.path}/$fileName');
+      
+      // 3. 写入文件
+      await file.writeAsString(jsonStr);
+      
+      // 4. 调用系统分享
+      // Share.shareXFiles 需要 share_plus 插件
+      if (context.mounted) {
+        final result = await Share.shareXFiles(
+          [XFile(file.path)], 
+          text: '物资管理系统数据备份 ($dateStr)',
+          subject: fileName
+        );
+        
+        if (result.status == ShareResultStatus.success) {
+           // 分享成功（部分系统可能不返回准确状态）
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("导出失败: $e")));
+      }
+    }
+  }
+
+  // --- 实现导入逻辑 ---
+  Future<void> _importDataFile(BuildContext context, DataModel model) async {
+    try {
+      // 1. 调起文件选择器
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json', 'txt'], // 允许 .json 或 .txt
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        
+        // 2. 读取文件内容
+        final jsonStr = await file.readAsString();
+        
+        // 3. 确认对话框
+        if (context.mounted) {
+           showDialog(context: context, builder: (c) => AlertDialog(
+             title: const Text("确认恢复"),
+             content: const Text("导入数据将覆盖或合并现有数据，是否继续？\n(建议先备份当前数据)"),
+             actions: [
+               TextButton(onPressed: () => Navigator.pop(c), child: const Text("取消")),
+               ElevatedButton(
+                 onPressed: () async {
+                   Navigator.pop(c);
+                   // 4. 执行导入
+                   final err = await model.importData(jsonStr);
+                   if (context.mounted) {
+                     if (err == null) {
+                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("数据恢复成功！")));
+                     } else {
+                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("数据格式错误: $err")));
+                     }
+                   }
+                 }, 
+                 child: const Text("确定")
+               ),
+             ],
+           ));
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("读取文件失败: $e")));
+      }
+    }
+  }
 }
 
-// RecordsPage 代码与之前相同，但为了文件完整性，这里再次列出（省略部分重复代码以节省空间，逻辑不变）
 class RecordsPage extends StatelessWidget {
   const RecordsPage({super.key});
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
-    // 记录列表也应该分页，这里简单起见保持长列表，因为历史记录通常是流式查看
-    // 如果需要分页，逻辑同 CatalogTab
     return Scaffold(
       appBar: AppBar(title: const Text("操作记录")),
       body: ListView.builder(

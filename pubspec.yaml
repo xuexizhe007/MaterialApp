@@ -1,7 +1,7 @@
 name: material_app
 description: A new Flutter project.
 publish_to: 'none'
-version: 1.3.0+1
+version: 1.5.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,12 +13,16 @@ dependencies:
   shared_preferences: ^2.2.0
   cupertino_icons: ^1.0.2
   intl: ^0.18.1
+  # PDF 相关
   pdf: ^3.10.4
   printing: ^5.11.0
-  # 新增：扫码库
+  # 扫码相关
   mobile_scanner: ^5.0.0
-  # 新增：权限处理
   permission_handler: ^11.3.0
+  # --- 新增：文件处理相关 ---
+  file_picker: ^6.0.0
+  path_provider: ^2.1.0
+  share_plus: ^7.2.0
 
 dev_dependencies:
   flutter_test:
@@ -29,5 +33,4 @@ flutter:
   uses-material-design: true
   
   assets:
-    # 请确保您的字体文件名是 FangSong.ttf 并且放在 assets/fonts/ 目录下
     - assets/fonts/FangSong.ttf
