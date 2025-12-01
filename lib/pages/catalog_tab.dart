@@ -12,8 +12,6 @@ class CatalogTab extends StatefulWidget {
 
 class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
-  // 目录页状态
   final _searchCtrl = TextEditingController();
   int _currentPage = 0;
   final int _pageSize = 10;
@@ -24,8 +22,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   final _inCountCtrl = TextEditingController(text: "1");
   final _inSupplierCtrl = TextEditingController();
   String _inSubType = "进货";
-  
-  // 防抖锁
   bool _isSubmitting = false;
 
   @override
@@ -61,8 +57,7 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final model = Provider.of<DataModel>(context);
 
-    // --- 目录页列表逻辑 ---
-    // 1. 筛选
+    // 筛选
     final filteredMaterials = model.materials.where((item) {
       final q = _searchCtrl.text.toLowerCase();
       return item.name.toLowerCase().contains(q) || 
@@ -70,16 +65,15 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
              item.remark.toLowerCase().contains(q);
     }).toList();
     
-    // --- 需求：库存降序排序 ---
+    // 排序：库存降序
     filteredMaterials.sort((a, b) => b.stock.compareTo(a.stock));
 
-    // 2. 分页计算
+    // 分页
     final totalItems = filteredMaterials.length;
     final totalPages = (totalItems / _pageSize).ceil();
     if (_currentPage >= totalPages && totalPages > 0) _currentPage = totalPages - 1;
     if (totalItems == 0) _currentPage = 0;
 
-    // 3. 截取当前页数据
     final pagedMaterials = filteredMaterials.skip(_currentPage * _pageSize).take(_pageSize).toList();
 
     return Scaffold(
@@ -137,14 +131,14 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
                           ],
                         ),
                         onTap: () {
-                           Navigator.push(context, MaterialPageRoute(builder: (c) => MaterialDetailPage(item: item)));
+                          // 传递 ID 而不是对象，更安全
+                           Navigator.push(context, MaterialPageRoute(builder: (c) => MaterialDetailPage(itemId: item.id)));
                         },
                       ),
                     );
                   },
                 ),
               ),
-              // 分页控制条
               if (totalPages > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -328,7 +322,6 @@ class _CatalogTabState extends State<CatalogTab> with SingleTickerProviderStateM
   }
 }
 
-// --- 选择器逻辑 ---
 void showSearchableSelectionSheet(BuildContext context, DataModel model, Function(String) onSelected) {
   showModalBottomSheet(
     context: context,
@@ -361,7 +354,6 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
              item.remark.toLowerCase().contains(q);
     }).toList();
     
-    // 弹窗中也按库存降序
     filtered.sort((a, b) => b.stock.compareTo(a.stock));
 
     final totalItems = filtered.length;
@@ -430,25 +422,30 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
   }
 }
 
-// --- 详情页：增加编辑功能 ---
+// --- 重构后的详情页 (基于 ID) ---
 class MaterialDetailPage extends StatelessWidget {
-  final MaterialItem item;
-  const MaterialDetailPage({super.key, required this.item});
+  final String itemId; // 仅接收 ID
+  
+  const MaterialDetailPage({super.key, required this.itemId});
 
   @override
   Widget build(BuildContext context) {
-    // 使用 Consumer 监听 Model 变化，确保修改后页面刷新
     return Consumer<DataModel>(
       builder: (context, model, child) {
-        // 重新获取 item 引用，防止失效
-        final currentItem = model.findByCode(item.code) ?? item;
-        final history = model.records.where((r) => r.code == currentItem.code).toList();
+        // 通过 ID 查找，即使 Code 改了也能找到
+        final currentItem = model.findById(itemId);
+        
+        if (currentItem == null) {
+          return Scaffold(appBar: AppBar(), body: const Center(child: Text("物资已删除")));
+        }
+
+        // 历史记录也通过 materialId 过滤，这才是最稳健的
+        final history = model.records.where((r) => r.materialId == currentItem.id).toList();
 
         return Scaffold(
           appBar: AppBar(
             title: Text(currentItem.name),
             actions: [
-              // --- 需求：编辑按钮 ---
               IconButton(
                 icon: const Icon(Icons.edit),
                 tooltip: "修改信息",
@@ -486,6 +483,7 @@ class MaterialDetailPage extends StatelessWidget {
                         return ListTile(
                           leading: Icon(isIn ? Icons.download : Icons.upload, color: isIn ? Colors.green : Colors.orange),
                           title: Text(isIn ? "入库: ${r.subType}" : "出库: ${r.subType}"),
+                          // 这里显示的是记录时的快照信息，还是现在的名字？通常建议显示快照
                           subtitle: Text("${r.date}\n${isIn ? '供应商: ' + r.target : '领用人: ' + r.receiver + ' (' + r.target + ')'}"),
                           isThreeLine: true,
                           trailing: Text((isIn ? "+" : "-") + r.count.toString(), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
@@ -500,8 +498,8 @@ class MaterialDetailPage extends StatelessWidget {
     );
   }
 
-  // --- 需求：编辑对话框 ---
   void _showEditDialog(BuildContext context, DataModel model, MaterialItem item) {
+    final codeCtrl = TextEditingController(text: item.code);
     final nameCtrl = TextEditingController(text: item.name);
     final remarkCtrl = TextEditingController(text: item.remark);
 
@@ -509,39 +507,44 @@ class MaterialDetailPage extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("修改物资信息"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 编码只读
-            TextField(
-              controller: TextEditingController(text: item.code),
-              decoration: const InputDecoration(labelText: "编码 (不可修改)", filled: true, fillColor: Colors.black12),
-              readOnly: true,
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: "名称"),
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: remarkCtrl,
-              decoration: const InputDecoration(labelText: "备注"),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: codeCtrl,
+                decoration: const InputDecoration(labelText: "编码", helperText: "修改编码不会丢失历史记录"),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "名称"),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: remarkCtrl,
+                decoration: const InputDecoration(labelText: "备注"),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
           ElevatedButton(
             onPressed: () {
-              if (nameCtrl.text.isEmpty) {
-                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("名称不能为空")));
+              if (codeCtrl.text.isEmpty || nameCtrl.text.isEmpty) {
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("编码和名称不能为空")));
                  return;
               }
-              // 调用 Model 更新方法
-              model.updateMaterial(item.code, nameCtrl.text, remarkCtrl.text);
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("修改成功")));
+              // 传递 ID 进行更新，安全可靠
+              final err = model.updateMaterial(item.id, codeCtrl.text, nameCtrl.text, remarkCtrl.text);
+              
+              if (err != null) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+              } else {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("修改成功")));
+              }
             },
             child: const Text("保存"),
           ),
