@@ -9,20 +9,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   provider: ^6.0.5
   shared_preferences: ^2.2.0
   cupertino_icons: ^1.0.2
   intl: ^0.18.1
-
-  # PDF 相关（新增）
-  pdf: ^3.11.3
-  printing: ^5.14.2
-
-  # 扫码（选择兼容 Dart 3.3 的版本）
-  mobile_scanner: ^5.1.1
-
-  # 文件相关
+  # PDF 相关
+  pdf: ^3.10.4
+  printing: ^5.11.0
+  # 扫码相关
+  mobile_scanner: ^5.0.0
+  permission_handler: ^11.3.0
+  # --- 新增：文件处理相关 ---
   file_picker: ^6.0.0
   path_provider: ^2.1.0
   share_plus: ^7.2.0
@@ -32,16 +29,13 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^2.0.0
 
-  # 启动图标生成工具（之前给你加的）
-  flutter_launcher_icons: ^0.13.1
-
 flutter:
   uses-material-design: true
   
   assets:
     - assets/fonts/FangSong.ttf
 
-# 启动图标配置（之前给你加的）
+# 启动图标配置（新增）
 flutter_icons:
   android: true
   ios: true
