@@ -28,6 +28,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -35,10 +36,7 @@ flutter:
   assets:
     - assets/fonts/FangSong.ttf
 
-# 启动图标配置（新增）
-flutter_icons:
-  android: true
-  ios: true
-  image_path: assets/app_icon_1024.png
-  remove_alpha_ios: true
-  min_sdk_android: 21
+flutter_launcher_icons:
+  android: true      # 只给安卓生成图标；如果以后要给 iOS 也用，改成 true
+  ios: false
+  image_path_svg: assets/app_icon_desktop.svg
