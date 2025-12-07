@@ -39,4 +39,4 @@ flutter:
 flutter_launcher_icons:
   android: true      # 只给安卓生成图标；如果以后要给 iOS 也用，改成 true
   ios: false
-  image_path_svg: assets/app_icon_desktop.svg
+  image_path: assets/app_icon_desktop.png
