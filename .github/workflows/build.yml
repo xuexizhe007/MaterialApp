@@ -56,6 +56,9 @@ jobs:
     - name: Get dependencies
       run: flutter pub get
 
+    - name: Generate launcher icons
+      run: flutter pub run flutter_launcher_icons
+
     - name: Accept Android Licenses
       run: yes | flutter doctor --android-licenses || true
 
