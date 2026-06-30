@@ -1,0 +1,64 @@
+#!/usr/bin/env sh
+set -e
+
+if command -v gradle >/dev/null 2>&1; then
+  exec gradle "$@"
+fi
+
+GRADLE_VERSION="8.7"
+BASE_DIR="${HOME}/.gradle/chatgpt-wrapper"
+GRADLE_HOME="${BASE_DIR}/gradle-${GRADLE_VERSION}"
+GRADLE_BIN="${GRADLE_HOME}/bin/gradle"
+ZIP_FILE="${BASE_DIR}/gradle-${GRADLE_VERSION}-bin.zip"
+
+URLS="
+https://mirrors.aliyun.com/gradle/gradle-${GRADLE_VERSION}-bin.zip
+https://mirrors.huaweicloud.com/gradle/gradle-${GRADLE_VERSION}-bin.zip
+https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VERSION}-bin.zip
+https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip
+"
+
+if [ ! -x "${GRADLE_BIN}" ]; then
+  mkdir -p "${BASE_DIR}"
+
+  if [ ! -f "${ZIP_FILE}" ]; then
+    downloaded=0
+    for url in ${URLS}; do
+      echo "Trying Gradle ${GRADLE_VERSION} download: ${url}"
+      rm -f "${ZIP_FILE}.tmp"
+      if command -v curl >/dev/null 2>&1; then
+        if curl -L --connect-timeout 30 --retry 2 "${url}" -o "${ZIP_FILE}.tmp"; then
+          mv "${ZIP_FILE}.tmp" "${ZIP_FILE}"
+          downloaded=1
+          break
+        fi
+      elif command -v wget >/dev/null 2>&1; then
+        if wget --timeout=30 --tries=2 -O "${ZIP_FILE}.tmp" "${url}"; then
+          mv "${ZIP_FILE}.tmp" "${ZIP_FILE}"
+          downloaded=1
+          break
+        fi
+      else
+        echo "Neither curl nor wget is available."
+        break
+      fi
+    done
+
+    if [ "${downloaded}" != "1" ]; then
+      echo "Failed to download Gradle ${GRADLE_VERSION} from all configured sources."
+      echo "Manual fix: download gradle-${GRADLE_VERSION}-bin.zip and place it at ${ZIP_FILE}, then rerun flutter build apk."
+      exit 1
+    fi
+  fi
+
+  echo "Unpacking ${ZIP_FILE}"
+  if command -v unzip >/dev/null 2>&1; then
+    rm -rf "${GRADLE_HOME}"
+    unzip -o "${ZIP_FILE}" -d "${BASE_DIR}" >/dev/null
+  else
+    echo "unzip is not available. Install Gradle or run: flutter create . --platforms android"
+    exit 1
+  fi
+fi
+
+exec "${GRADLE_BIN}" "$@"

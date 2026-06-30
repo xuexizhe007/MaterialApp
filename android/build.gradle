@@ -1,0 +1,72 @@
+allprojects {
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        google()
+        mavenCentral()
+    }
+}
+
+
+// v2.1.2: 统一 app 与 Flutter 插件子工程的 compileSdk。
+// 修复 printing/shared_preferences 等插件在 compileSdk 过低时出现的 android:attr/lStar not found。
+def detectWarehouseCompileSdkVersion = {
+    def localProperties = new Properties()
+    def localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.withReader("UTF-8") { reader ->
+            localProperties.load(reader)
+        }
+    }
+
+    def androidSdkPath = localProperties.getProperty("sdk.dir")
+    if (androidSdkPath == null || androidSdkPath.trim().isEmpty()) {
+        androidSdkPath = System.getenv("ANDROID_HOME")
+    }
+    if (androidSdkPath == null || androidSdkPath.trim().isEmpty()) {
+        androidSdkPath = System.getenv("ANDROID_SDK_ROOT")
+    }
+
+    def highestInstalled = null
+    if (androidSdkPath != null && !androidSdkPath.trim().isEmpty()) {
+        def platformsDir = new File(androidSdkPath, "platforms")
+        if (platformsDir.exists() && platformsDir.isDirectory()) {
+            def versions = platformsDir.listFiles()
+                    ?.findAll { it.isDirectory() && (it.name ==~ /android-\d+/) }
+                    ?.collect { (it.name - "android-") as int }
+                    ?: []
+            if (!versions.isEmpty()) {
+                highestInstalled = versions.max()
+            }
+        }
+    }
+
+    // 当前依赖至少需要 36；若本机有更高平台则使用更高平台。
+    def chosen = highestInstalled != null ? Math.max(highestInstalled, 36) : 36
+    println("Using Android compileSdk: " + chosen + (highestInstalled != null ? " (highest installed platform: android-" + highestInstalled + ")" : ""))
+    return chosen
+}
+
+ext.warehouseCompileSdkVersion = detectWarehouseCompileSdkVersion()
+
+subprojects { subproject ->
+    afterEvaluate {
+        if (subproject.plugins.hasPlugin("com.android.application") || subproject.plugins.hasPlugin("com.android.library")) {
+            subproject.android {
+                compileSdkVersion rootProject.ext.warehouseCompileSdkVersion
+            }
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

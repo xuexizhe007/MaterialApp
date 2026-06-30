@@ -1,0 +1,5 @@
+version:
+  revision: "manual-v2-source-package"
+  channel: "stable"
+
+project_type: app

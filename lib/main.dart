@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '物资管理系统 V1.4',
+      title: '物资管理系统 V2.1.3.3',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
@@ -77,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
               const Icon(Icons.inventory_2, size: 80, color: Colors.blue),
               const SizedBox(height: 20),
               const Text("物资管理系统", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const Text("V1.4 移动端", style: TextStyle(color: Colors.grey)),
+              const Text("V2.1.3 移动端", style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 40),
               TextField(
                 controller: _userController,

@@ -4,14 +4,14 @@ import 'package:provider/provider.dart';
 import '../data_model.dart';
 import 'catalog_tab.dart' show showSearchableSelectionSheet;
 
-class OutboundTab extends StatefulWidget {
-  const OutboundTab({super.key});
+class InboundTab extends StatefulWidget {
+  const InboundTab({super.key});
 
   @override
-  State<OutboundTab> createState() => _OutboundTabState();
+  State<InboundTab> createState() => _InboundTabState();
 }
 
-class _OutboundLineController {
+class _InboundLineController {
   String? materialId;
   int currentStock = 0;
   final nameCtrl = TextEditingController();
@@ -23,23 +23,21 @@ class _OutboundLineController {
   }
 }
 
-class _OutboundTabState extends State<OutboundTab> {
-  final List<_OutboundLineController> _lines = [];
-  final _deptCtrl = TextEditingController();
-  final _receiverCtrl = TextEditingController();
-  String _subType = '领用';
+class _InboundTabState extends State<InboundTab> {
+  final List<_InboundLineController> _lines = [];
+  final _supplierCtrl = TextEditingController();
+  String _subType = '进货';
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _lines.add(_OutboundLineController());
+    _lines.add(_InboundLineController());
   }
 
   @override
   void dispose() {
-    _deptCtrl.dispose();
-    _receiverCtrl.dispose();
+    _supplierCtrl.dispose();
     for (final line in _lines) {
       line.dispose();
     }
@@ -56,7 +54,7 @@ class _OutboundTabState extends State<OutboundTab> {
   }
 
   void _addLine() {
-    setState(() => _lines.insert(0, _OutboundLineController()));
+    setState(() => _lines.insert(0, _InboundLineController()));
   }
 
   void _removeLine(int index) {
@@ -72,9 +70,8 @@ class _OutboundTabState extends State<OutboundTab> {
     }
     _lines
       ..clear()
-      ..add(_OutboundLineController());
-    _deptCtrl.clear();
-    _receiverCtrl.clear();
+      ..add(_InboundLineController());
+    _supplierCtrl.clear();
   }
 
   @override
@@ -94,27 +91,25 @@ class _OutboundTabState extends State<OutboundTab> {
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _subType,
-              decoration: const InputDecoration(labelText: '业务类型'),
+              decoration: const InputDecoration(labelText: '入库类型'),
               items: const [
-                DropdownMenuItem(value: '领用', child: Text('领用')),
-                DropdownMenuItem(value: '借用', child: Text('借用')),
+                DropdownMenuItem(value: '进货', child: Text('进货')),
+                DropdownMenuItem(value: '归还', child: Text('归还')),
               ],
-              onChanged: (v) => setState(() => _subType = v ?? '领用'),
+              onChanged: (v) => setState(() => _subType = v ?? '进货'),
             ),
             const SizedBox(height: 10),
-            TextField(controller: _deptCtrl, decoration: const InputDecoration(labelText: '领用部门')),
-            const SizedBox(height: 10),
-            TextField(controller: _receiverCtrl, decoration: const InputDecoration(labelText: '领用人姓名')),
-            const SizedBox(height: 30),
+            TextField(controller: _supplierCtrl, decoration: const InputDecoration(labelText: '供应商/归还人')),
+            const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                onPressed: _isSubmitting ? null : () => _submitOutbound(model),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                onPressed: _isSubmitting ? null : () => _submitInbound(model),
                 child: _isSubmitting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('确认出库', style: TextStyle(fontSize: 18)),
+                    : const Text('确认入库', style: TextStyle(fontSize: 18)),
               ),
             ),
           ],
@@ -128,7 +123,7 @@ class _OutboundTabState extends State<OutboundTab> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text('出库物资', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text('入库物资', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         OutlinedButton.icon(
           onPressed: _addLine,
           icon: const Icon(Icons.add),
@@ -138,9 +133,9 @@ class _OutboundTabState extends State<OutboundTab> {
     );
   }
 
-  Widget _buildLineCard(DataModel model, int index, _OutboundLineController line) {
+  Widget _buildLineCard(DataModel model, int index, _InboundLineController line) {
     return Card(
-      color: Colors.orange[50],
+      color: Colors.green[50],
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -179,15 +174,12 @@ class _OutboundTabState extends State<OutboundTab> {
             if (line.materialId != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '当前库存: ${line.currentStock}',
-                  style: const TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.bold),
-                ),
+                child: Text('当前库存: ${line.currentStock}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
               ),
             const SizedBox(height: 10),
             TextField(
               controller: line.countCtrl,
-              decoration: const InputDecoration(labelText: '出库数量'),
+              decoration: const InputDecoration(labelText: '入库数量'),
               keyboardType: TextInputType.number,
             ),
           ],
@@ -196,21 +188,16 @@ class _OutboundTabState extends State<OutboundTab> {
     );
   }
 
-  Future<void> _submitOutbound(DataModel model) async {
-    if (_receiverCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请填写领用人姓名')));
-      return;
-    }
-
+  Future<void> _submitInbound(DataModel model) async {
     final movementLines = <MovementLineInput>[];
     for (final line in _lines) {
       if (line.materialId == null || line.materialId!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请完整选择出库物资')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请完整选择入库物资')));
         return;
       }
       final count = int.tryParse(line.countCtrl.text.trim()) ?? 0;
       if (count <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('出库数量必须大于 0')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('入库数量必须大于 0')));
         return;
       }
       movementLines.add(MovementLineInput(materialId: line.materialId!, count: count));
@@ -219,13 +206,13 @@ class _OutboundTabState extends State<OutboundTab> {
     setState(() => _isSubmitting = true);
     await Future.delayed(const Duration(milliseconds: 300));
 
-    final err = model.outboundBatch(movementLines, _subType, _deptCtrl.text, _receiverCtrl.text);
+    final err = model.inboundBatch(movementLines, _subType, _supplierCtrl.text, '');
     if (!mounted) return;
     if (err != null) {
       showDialog(context: context, builder: (_) => AlertDialog(title: const Text('错误'), content: Text(err)));
       setState(() => _isSubmitting = false);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('出库成功，共 ${movementLines.length} 项')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('入库成功，共 ${movementLines.length} 项')));
       setState(() {
         _resetLines();
         _isSubmitting = false;

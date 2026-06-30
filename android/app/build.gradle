@@ -1,0 +1,128 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+// v2.0.5: 自动使用本机已安装的最高版本 Android SDK Build-Tools。
+// 解决“Build-Tools 34 已安装大类但未安装 34.0.0 精确版本 / 自动下载失败”的问题。
+def parseAndroidBuildToolsVersion = { String versionName ->
+    def result = []
+    versionName.tokenize('.').each { part ->
+        try {
+            result.add(part as int)
+        } catch (Throwable ignored) {
+            result.add(0)
+        }
+    }
+    while (result.size() < 3) {
+        result.add(0)
+    }
+    return result
+}
+
+def compareAndroidBuildToolsVersion = { String a, String b ->
+    def aa = parseAndroidBuildToolsVersion(a)
+    def bb = parseAndroidBuildToolsVersion(b)
+    for (int i = 0; i < Math.max(aa.size(), bb.size()); i++) {
+        int av = i < aa.size() ? aa[i] : 0
+        int bv = i < bb.size() ? bb[i] : 0
+        if (av != bv) {
+            return av <=> bv
+        }
+    }
+    return 0
+}
+
+def androidSdkPath = localProperties.getProperty('sdk.dir')
+if (androidSdkPath == null || androidSdkPath.trim().isEmpty()) {
+    androidSdkPath = System.getenv("ANDROID_HOME")
+}
+if (androidSdkPath == null || androidSdkPath.trim().isEmpty()) {
+    androidSdkPath = System.getenv("ANDROID_SDK_ROOT")
+}
+
+def installedBuildToolsVersion = null
+if (androidSdkPath != null && !androidSdkPath.trim().isEmpty()) {
+    def buildToolsDir = new File(androidSdkPath, "build-tools")
+    if (buildToolsDir.exists() && buildToolsDir.isDirectory()) {
+        def versions = buildToolsDir.listFiles()
+                ?.findAll { it.isDirectory() && (it.name ==~ /\d+(\.\d+){1,2}/) }
+                ?.collect { it.name }
+                ?: []
+        if (!versions.isEmpty()) {
+            versions = versions.sort(compareAndroidBuildToolsVersion)
+            installedBuildToolsVersion = versions.last()
+            println("Using installed Android SDK Build-Tools: " + installedBuildToolsVersion + " from " + buildToolsDir)
+        } else {
+            println("No installed Android SDK Build-Tools version directory found under " + buildToolsDir)
+        }
+    } else {
+        println("Android SDK build-tools directory not found: " + buildToolsDir)
+    }
+} else {
+    println("Android SDK path not found from local.properties, ANDROID_HOME or ANDROID_SDK_ROOT")
+}
+
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '2.0.0'
+}
+
+android {
+    // v2.1.2: compileSdk/targetSdk 由根工程统一设置到本机可用的 36+，修复插件资源链接失败。
+
+    // v2.0.4: 避免 release 构建时 lintVitalReportRelease 强制安装 Android SDK Build-Tools 34。
+    // 这不会影响 APK 正常编译打包；只是关闭 release 构建阶段的 lint 阻断。
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    namespace "com.example.material_app"
+
+    if (installedBuildToolsVersion != null) {
+        buildToolsVersion installedBuildToolsVersion
+    }
+    compileSdkVersion rootProject.ext.warehouseCompileSdkVersion
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.example.material_app"
+        minSdkVersion 21
+        targetSdkVersion rootProject.ext.warehouseCompileSdkVersion
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
+}
+
+flutter {
+    source '../..'
+}
